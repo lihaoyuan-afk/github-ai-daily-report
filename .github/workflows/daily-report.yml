@@ -1,0 +1,26 @@
+ yaml
+    name: GitHub AI 热门日报
+
+    on:
+      schedule:
+        - cron: '0 0   *'
+      workflow_dispatch:
+
+    jobs:
+      send-report:
+        runs-on: ubuntu-latest
+        steps:
+          - name: Checkout repository
+            uses: actions/checkout@v4
+          - name: Set up Python
+            uses: actions/setup-python@v5
+            with:
+              python-version: '3.11'
+          - name: Send AI Daily Report
+            env:
+              SMTP_SERVER: smtp.163.com
+              SMTP_PORT: '994'
+              SENDER_ADDRESS: ${{ secrets.SENDER_ADDRESS }}
+              SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+              RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+            run: python report.py
