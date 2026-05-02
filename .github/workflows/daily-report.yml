@@ -1,20 +1,37 @@
-name: GitHub AI daily report
+name: AI Daily Report
+
 on:
   schedule:
+    # 北京时间早8点 = UTC 0:00
     - cron: '0 0 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
   send-report:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - env:
-          SMTP_SERVER: smtp.163.com
-          SMTP_PORT: '994'
+
+      - name: Send AI Daily Report
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SENDER_ADDRESS: ${{ secrets.SENDER_ADDRESS }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python report.py
+
+      - name: Commit seen URLs
+        run: |
+          git config user.name "AI Daily Bot"
+          git config user.email "bot@github-actions"
+          git add seen_urls.json 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "chore: update seen URLs [skip ci]" && git push
