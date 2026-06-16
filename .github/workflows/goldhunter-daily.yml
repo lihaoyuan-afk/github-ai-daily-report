@@ -1,0 +1,116 @@
+name: GoldHunter Daily Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 07:30 Asia/Shanghai. This runs after the US market session has closed.
+    - cron: "30 23 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: goldhunter-daily-report
+  cancel-in-progress: false
+
+env:
+  MAIL_SERVER: ${{ secrets.MAIL_SERVER }}
+  MAIL_PORT: ${{ secrets.MAIL_PORT }}
+  MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+  MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+  MAIL_TO: ${{ secrets.MAIL_TO }}
+  MAIL_FROM: ${{ secrets.MAIL_FROM }}
+
+jobs:
+  run-goldhunter:
+    name: Run GoldHunter and commit report
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: GoldHunter/requirements.txt
+
+      - name: Install dependencies
+        working-directory: GoldHunter
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run GoldHunter
+        working-directory: GoldHunter
+        run: python main.py
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: goldhunter-daily-report
+          path: |
+            GoldHunter/data/history.csv
+            GoldHunter/reports/daily_report.md
+            GoldHunter/reports/email_summary.md
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Send concise Chinese email
+        if: ${{ always() && env.MAIL_SERVER != '' && env.MAIL_USERNAME != '' && env.MAIL_PASSWORD != '' && env.MAIL_TO != '' }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import smtplib
+          import ssl
+          from email.message import EmailMessage
+          from pathlib import Path
+
+          summary_path = Path("GoldHunter/reports/email_summary.md")
+          if summary_path.exists():
+              body = summary_path.read_text(encoding="utf-8")
+          else:
+              body = "日期：暂无数据\n结论：数据不足\n得分：0\n简述：本次未生成有效摘要\n"
+
+          message = EmailMessage()
+          message["Subject"] = "黄金宏观日报"
+          message["From"] = os.getenv("MAIL_FROM") or os.environ["MAIL_USERNAME"]
+          message["To"] = os.environ["MAIL_TO"]
+          message.set_content(body, subtype="plain", charset="utf-8")
+
+          server = os.environ["MAIL_SERVER"]
+          port = int(os.getenv("MAIL_PORT") or "465")
+          username = os.environ["MAIL_USERNAME"]
+          password = os.environ["MAIL_PASSWORD"]
+
+          if port == 465:
+              with smtplib.SMTP_SSL(server, port, context=ssl.create_default_context()) as smtp:
+                  smtp.login(username, password)
+                  smtp.send_message(message)
+          else:
+              with smtplib.SMTP(server, port) as smtp:
+                  smtp.ehlo()
+                  if port == 587:
+                      smtp.starttls(context=ssl.create_default_context())
+                      smtp.ehlo()
+                  smtp.login(username, password)
+                  smtp.send_message(message)
+          PY
+
+      - name: Commit updated data and report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add GoldHunter/data GoldHunter/reports
+          if git diff --cached --quiet; then
+            echo "No GoldHunter changes to commit."
+          else
+            git commit -m "chore: update GoldHunter daily report"
+            git push
+          fi

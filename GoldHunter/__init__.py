@@ -1,0 +1,2 @@
+"""Gold macro watcher package."""
+
