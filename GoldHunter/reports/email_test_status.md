@@ -1,5 +1,8 @@
-测试时间：2026-06-17 06:37:17 UTC
+测试时间：2026-06-17 06:57:35 UTC
 触发方式：push
-邮件配置：不完整
-发送状态：未发送
-原因：缺少 MAIL_SERVER / MAIL_USERNAME / MAIL_PASSWORD / MAIL_TO 中的至少一项
+邮件配置：完整
+发送状态：等待发送
+
+发送状态：失败
+错误类型：SMTPAuthenticationError
+错误信息：(550, b'User has no permission')
