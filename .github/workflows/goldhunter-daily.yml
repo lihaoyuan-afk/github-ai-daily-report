@@ -23,12 +23,12 @@ concurrency:
 
 env:
   GH_PUSH_TOKEN: ${{ github.token }}
-  MAIL_SERVER: ${{ secrets.MAIL_SERVER }}
-  MAIL_PORT: ${{ secrets.MAIL_PORT }}
-  MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
-  MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
-  MAIL_TO: ${{ secrets.MAIL_TO }}
-  MAIL_FROM: ${{ secrets.MAIL_FROM }}
+  MAIL_SERVER: ${{ secrets.MAIL_SERVER || secrets.SMTP_SERVER }}
+  MAIL_PORT: ${{ secrets.MAIL_PORT || secrets.SMTP_PORT }}
+  MAIL_USERNAME: ${{ secrets.MAIL_USERNAME || secrets.SENDER_ADDRESS }}
+  MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD || secrets.SENDER_PASSWORD }}
+  MAIL_TO: ${{ secrets.MAIL_TO || secrets.RECIPIENT_EMAIL }}
+  MAIL_FROM: ${{ secrets.MAIL_FROM || secrets.SENDER_ADDRESS || secrets.MAIL_USERNAME }}
 
 jobs:
   run-goldhunter:
