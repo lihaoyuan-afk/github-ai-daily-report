@@ -35,7 +35,7 @@ def main() -> int:
     print(f"已更新历史数据：{HISTORY_CSV}")
     print(f"已生成日报：{report_path}")
     print(f"已生成邮件摘要：{email_path}")
-    print(f"黄金多空判断：{analysis.verdict}（得分 {analysis.score:g}）")
+    print(f"黄金大跌风险：{analysis.risk_color}（{analysis.score:.1f}/100）")
     return 0
 
 

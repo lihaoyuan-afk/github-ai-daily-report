@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from analyzer import AnalysisResult, MetricChange
+from analyzer import AnalysisResult
 from config import DAILY_REPORT, EMAIL_SUMMARY, REPORT_TITLE
 
 
@@ -14,42 +14,48 @@ def generate_report(
     output_path: Path = DAILY_REPORT,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    latest_row = _latest_row(history)
 
     lines = [
         f"# {REPORT_TITLE}",
         "",
-        f"- 报告日期：{analysis.latest_date or 'N/A'}",
-        f"- 综合得分：{analysis.score:g}",
-        f"- 黄金多空判断：**{analysis.verdict}**",
+        f"- 日期：{analysis.latest_date or 'N/A'}",
+        f"- 黄金大跌风险：**{analysis.risk_color}**（{analysis.risk_label}）",
+        f"- Gold Crash Risk Score：**{analysis.score:.1f} / 100**",
+        f"- 一句话判断：{analysis.one_line}",
         "",
-        "## 今日数据表",
+        "## 主要压力来源",
         "",
-        _today_table(latest_row),
+        _drivers_list(analysis),
         "",
-        "## 各指标变化",
+        "## 模块分数",
         "",
-        _change_table(analysis.metric_changes),
+        _module_table(analysis),
         "",
-        "## 简短解释",
+        "## 核心指标快照",
         "",
-        analysis.explanation,
+        _snapshot_table(analysis),
         "",
-        "## 指标备注",
+        "## 触发的风险规则",
         "",
-        "- 黄金价格口径改为 SPDR Gold Shares 官方历史档案中的 GLD 收盘价；XAU/USD、LBMA、ICE、CME 的实时官方接口通常需要授权或许可。",
-        "- 美国10年期国债收益率使用 FRED DGS10，来源为 Federal Reserve H.15 Selected Interest Rates。",
-        "- 美元指标使用 FRED DTWEXBGS，即美联储 H.10 的 Nominal Broad U.S. Dollar Index；它不是 ICE DXY，但属于官方美元强弱指标。",
-        "- 黄金ETF资金流向使用 SPDR Gold Shares 官方历史档案中的 Tonnes of Gold 日变化，正值视为净流入，负值视为净流出。",
-        "- 原油价格使用 FRED DCOILWTICO，来源为 U.S. Energy Information Administration 的 WTI Cushing 现货价。",
-        "- 各官方源发布时间不同，报告使用每个指标的最新可得数据，并在今日数据表中标注数据日。",
-        f"- 原油“明显上涨/回落”的阈值为日变化 2%。",
+        _simple_list(analysis.triggered_rules, "暂未触发黄色/橙色/红色组合规则。"),
+        "",
+        "## 暂未恶化的部分",
+        "",
+        _simple_list(analysis.stable_factors, "暂无足够数据判断未恶化项。"),
+        "",
+        "## 判断",
+        "",
+        _judgement(analysis),
+        "",
+        "## 数据源说明",
+        "",
+        "- GLD价格与持仓：SPDR Gold Shares 官方 Historical Archive。",
+        "- 实际利率、2年/10年美债、美元指数、VIX、高收益债利差、NFCI、SOFR、IORB、准备金：FRED 官方公开序列。",
+        "- CFTC持仓：CFTC Disaggregated Futures Only，COMEX Gold Managed Money。",
+        "- ICE DXY、LBMA金价、CME实时行情通常需要授权；本系统优先使用可自动化抓取的官方公开源。",
+        "- 本报告是风险雷达，不预测明天涨跌，也不构成投资建议。",
     ]
 
-    if analysis.previous_date:
-        lines.insert(4, f"- 上一可用交易日：{analysis.previous_date}")
-    if analysis.seven_day_ref_date:
-        lines.insert(5, f"- 7日前参考日：{analysis.seven_day_ref_date}")
     if analysis.warnings:
         lines.extend(["", "## 数据抓取提示", ""])
         lines.extend(f"- {warning}" for warning in analysis.warnings)
@@ -64,60 +70,77 @@ def generate_email_summary(
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    positive = [metric.name for metric in analysis.metric_changes if metric.score > 0]
-    negative = [metric.name for metric in analysis.metric_changes if metric.score < 0]
-    reason_parts = []
-    if positive:
-        reason_parts.append(f"利多：{'、'.join(positive)}")
-    if negative:
-        reason_parts.append(f"利空：{'、'.join(negative)}")
-    reason = "；".join(reason_parts) if reason_parts else "信号不明显"
+    drivers = [driver for module in analysis.modules for driver in module.drivers]
+    if drivers:
+        reason = "；".join(drivers[:3])
+    else:
+        reason = "暂无多组风险共振"
 
     lines = [
         f"日期：{analysis.latest_date or '暂无数据'}",
-        f"结论：{analysis.verdict}",
-        f"得分：{analysis.score:g}",
-        f"简述：{reason}",
+        f"黄金大跌风险：{analysis.risk_color}",
+        f"分数：{analysis.score:.1f}/100",
+        f"主要原因：{reason}",
+        f"判断：{analysis.one_line}",
     ]
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return output_path
 
 
-def _latest_row(history: pd.DataFrame) -> pd.Series | None:
-    if history.empty:
-        return None
-    clean = history.copy()
-    clean["date"] = pd.to_datetime(clean["date"])
-    return clean.sort_values("date").iloc[-1]
+def _drivers_list(analysis: AnalysisResult) -> str:
+    drivers = [driver for module in analysis.modules for driver in module.drivers]
+    return _simple_list(drivers[:8], "暂无明显压力来源。")
 
 
-def _today_table(row: pd.Series | None) -> str:
-    rows = [
-        ["GLD官方收盘价", _fmt(_row_value(row, "gold_price")), _source(row, "gold_price")],
-        ["美国10年期国债收益率", _fmt(_row_value(row, "us10y_yield"), "%"), _source(row, "us10y_yield")],
-        ["美联储广义美元指数", _fmt(_row_value(row, "dxy")), _source(row, "dxy")],
-        ["GLD官方黄金持仓", _fmt(_row_value(row, "gld_tonnes"), " 吨"), _source(row, "gold_etf")],
-        ["GLD持仓日变化", _fmt(_row_value(row, "gold_etf_flow_proxy"), " 吨"), "SPDR Gold Shares Historical Archive"],
-        ["WTI原油现货价格", _fmt(_row_value(row, "oil_price")), _source(row, "oil_price")],
-    ]
-    return _markdown_table(["指标", "最新值", "数据源/说明"], rows)
-
-
-def _change_table(metric_changes: list[MetricChange]) -> str:
+def _module_table(analysis: AnalysisResult) -> str:
     rows = []
-    for metric in metric_changes:
-        suffix = " 吨" if metric.key == "gold_etf_flow_proxy" else ""
+    for module in analysis.modules:
         rows.append(
             [
-                metric.name,
-                _fmt_change(metric.previous_change, metric.previous_change_pct, suffix=suffix),
-                _fmt_change(metric.seven_day_change, metric.seven_day_change_pct, suffix=suffix),
-                metric.signal,
-                f"{metric.score:g}",
-                metric.note,
+                module.name,
+                f"{module.score:.1f}",
+                f"{module.weight * 100:.0f}%",
+                f"{module.contribution:.1f}",
+                "；".join(module.drivers[:2]) if module.drivers else "暂无明显恶化",
             ]
         )
-    return _markdown_table(["指标", "较上一可用日", "较7日前", "信号", "得分", "说明"], rows)
+    return _markdown_table(["模块", "模块分", "权重", "贡献", "核心信号"], rows)
+
+
+def _snapshot_table(analysis: AnalysisResult) -> str:
+    snapshot = analysis.latest_snapshot
+    rows = [
+        ["GLD官方收盘价", _fmt(snapshot.get("gold_price"))],
+        ["MA50 / MA100 / MA200", f"{_fmt(snapshot.get('ma50'))} / {_fmt(snapshot.get('ma100'))} / {_fmt(snapshot.get('ma200'))}"],
+        ["60日高点回撤", _fmt(snapshot.get("drawdown_60d_pct"), "%")],
+        ["10年实际利率", _fmt(snapshot.get("real_yield_10y"), "%")],
+        ["10年实际利率20日变化", _fmt(snapshot.get("real_yield_20d_bp"), "bp")],
+        ["美元指数20日涨幅", _fmt(snapshot.get("dollar_20d_pct"), "%")],
+        ["GLD持仓", _fmt(snapshot.get("gld_tonnes"), " 吨")],
+        ["GLD近20日持仓变化", _fmt(snapshot.get("gld_20d_flow_tonnes"), " 吨")],
+        ["CFTC Managed Money净多头", _fmt(snapshot.get("cftc_mm_net_long"), " 张")],
+        ["高收益债利差", _fmt(snapshot.get("hy_oas"), "%")],
+        ["VIX", _fmt(snapshot.get("vix"))],
+    ]
+    return _markdown_table(["指标", "最新值"], rows)
+
+
+def _judgement(analysis: AnalysisResult) -> str:
+    if analysis.risk_color == "绿色":
+        return "当前更接近正常波动，尚未看到实际利率、美元、资金流和价格结构的共振恶化。"
+    if analysis.risk_color == "黄色":
+        return "大跌风险开始上升，但仍需观察是否跌破更长期均线，以及ETF/CFTC是否继续恶化。"
+    if analysis.risk_color == "橙色":
+        return "未来10-30个交易日出现较大回撤的风险明显升高，建议进入防守观察状态。"
+    if analysis.risk_color == "红色":
+        return "当前不是普通小回调，而是宏观压力、资金流与价格结构共振恶化。"
+    return "数据不足，暂不判断。"
+
+
+def _simple_list(items: list[str], empty_text: str) -> str:
+    if not items:
+        return f"- {empty_text}"
+    return "\n".join(f"- {item}" for item in items)
 
 
 def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
@@ -135,52 +158,13 @@ def _escape_cell(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
 
 
-def _row_value(row: pd.Series | None, key: str) -> object | None:
-    if row is None or key not in row:
-        return None
-    value = row[key]
-    if pd.isna(value):
-        return None
-    return value
-
-
-def _source(row: pd.Series | None, key: str) -> str:
-    source = _row_value(row, f"{key}_source")
-    source_date = _row_value(row, f"{key}_source_date")
-    if source and source_date:
-        return f"{source}（数据日 {source_date}）"
-    if source:
-        return str(source)
-    return "N/A"
-
-
 def _fmt(value: object | None, suffix: str = "") -> str:
     if value is None:
         return "N/A"
     try:
-        return f"{float(value):,.2f}{suffix}"
+        number = float(value)
     except (TypeError, ValueError):
         return str(value)
-
-
-def _fmt_money(value: object | None) -> str:
-    if value is None:
+    if pd.isna(number):
         return "N/A"
-    number = float(value)
-    sign = "-" if number < 0 else ""
-    abs_number = abs(number)
-    if abs_number >= 1_000_000_000:
-        return f"{sign}${abs_number / 1_000_000_000:,.2f}B"
-    if abs_number >= 1_000_000:
-        return f"{sign}${abs_number / 1_000_000:,.2f}M"
-    return f"{sign}${abs_number:,.0f}"
-
-
-def _fmt_change(delta: float | None, pct: float | None, suffix: str = "") -> str:
-    if delta is None:
-        return "N/A"
-    sign = "+" if delta > 0 else ""
-    if pct is None:
-        return f"{sign}{delta:,.2f}{suffix}"
-    pct_sign = "+" if pct > 0 else ""
-    return f"{sign}{delta:,.2f}{suffix} ({pct_sign}{pct:,.2f}%)"
+    return f"{number:,.2f}{suffix}"
