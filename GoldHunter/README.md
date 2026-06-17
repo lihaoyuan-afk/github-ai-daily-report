@@ -143,6 +143,8 @@ GoldHunter/
 
 邮件正文只输出中文摘要，并保持尽可能简短。
 
+配置完成后，可以在 GitHub Actions 页面手动运行一次工作流，或推送一次小改动来验证真实邮件发送。
+
 ## 本地运行
 
 Windows PowerShell：
