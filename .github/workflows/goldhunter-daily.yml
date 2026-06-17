@@ -54,7 +54,27 @@ jobs:
       - name: Run GoldHunter
         run: .venv/bin/python GoldHunter/main.py
 
+      - name: Record email configuration status
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p GoldHunter/reports
+          {
+            echo "测试时间：$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "触发方式：${GITHUB_EVENT_NAME}"
+            if [ -n "${MAIL_SERVER}" ] && [ -n "${MAIL_USERNAME}" ] && [ -n "${MAIL_PASSWORD}" ] && [ -n "${MAIL_TO}" ]; then
+              echo "邮件配置：完整"
+              echo "发送状态：等待发送"
+            else
+              echo "邮件配置：不完整"
+              echo "发送状态：未发送"
+              echo "原因：缺少 MAIL_SERVER / MAIL_USERNAME / MAIL_PASSWORD / MAIL_TO 中的至少一项"
+            fi
+          } > GoldHunter/reports/email_test_status.md
+
       - name: Send concise Chinese email
+        id: send_email
+        continue-on-error: true
         if: ${{ always() && env.MAIL_SERVER != '' && env.MAIL_USERNAME != '' && env.MAIL_PASSWORD != '' && env.MAIL_TO != '' }}
         shell: bash
         run: |
@@ -65,6 +85,7 @@ jobs:
           from email.message import EmailMessage
           from pathlib import Path
 
+          status_path = Path("GoldHunter/reports/email_test_status.md")
           summary_path = Path("GoldHunter/reports/email_summary.md")
           if summary_path.exists():
               body = summary_path.read_text(encoding="utf-8")
@@ -82,19 +103,42 @@ jobs:
           username = os.environ["MAIL_USERNAME"]
           password = os.environ["MAIL_PASSWORD"]
 
-          if port == 465:
-              with smtplib.SMTP_SSL(server, port, context=ssl.create_default_context()) as smtp:
-                  smtp.login(username, password)
-                  smtp.send_message(message)
-          else:
-              with smtplib.SMTP(server, port) as smtp:
-                  smtp.ehlo()
-                  if port == 587:
-                      smtp.starttls(context=ssl.create_default_context())
+          try:
+              if port == 465:
+                  with smtplib.SMTP_SSL(server, port, context=ssl.create_default_context()) as smtp:
+                      smtp.login(username, password)
+                      smtp.send_message(message)
+              else:
+                  with smtplib.SMTP(server, port) as smtp:
                       smtp.ehlo()
-                  smtp.login(username, password)
-                  smtp.send_message(message)
+                      if port == 587:
+                          smtp.starttls(context=ssl.create_default_context())
+                          smtp.ehlo()
+                      smtp.login(username, password)
+                      smtp.send_message(message)
+          except Exception as exc:
+              with status_path.open("a", encoding="utf-8") as handle:
+                  handle.write("\n发送状态：失败\n")
+                  handle.write(f"错误类型：{type(exc).__name__}\n")
+                  handle.write(f"错误信息：{exc}\n")
+              raise
+          else:
+              with status_path.open("a", encoding="utf-8") as handle:
+                  handle.write("\n发送状态：成功\n")
+                  handle.write("结果：测试邮件已提交给 SMTP 服务器\n")
           PY
+
+      - name: Record skipped email test
+        if: ${{ always() && steps.send_email.outcome == 'skipped' }}
+        shell: bash
+        run: |
+          if ! grep -q "发送状态：未发送" GoldHunter/reports/email_test_status.md; then
+            {
+              echo ""
+              echo "发送状态：未发送"
+              echo "原因：邮件发送步骤被跳过"
+            } >> GoldHunter/reports/email_test_status.md
+          fi
 
       - name: Commit updated data and report
         run: |
@@ -107,3 +151,7 @@ jobs:
             git commit -m "chore: update GoldHunter daily report"
             git push origin "HEAD:${GITHUB_REF_NAME:-main}"
           fi
+
+      - name: Fail when email send failed
+        if: ${{ steps.send_email.outcome == 'failure' }}
+        run: exit 1
