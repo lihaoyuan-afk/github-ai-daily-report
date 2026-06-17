@@ -22,6 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  GH_PUSH_TOKEN: ${{ github.token }}
   MAIL_SERVER: ${{ secrets.MAIL_SERVER }}
   MAIL_PORT: ${{ secrets.MAIL_PORT }}
   MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
@@ -40,7 +41,7 @@ jobs:
         run: |
           BRANCH="${GITHUB_REF_NAME:-main}"
           git init .
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git remote add origin "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --depth=1 origin "$BRANCH"
           git checkout -B "$BRANCH" FETCH_HEAD
 
