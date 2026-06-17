@@ -34,6 +34,7 @@ jobs:
   run-goldhunter:
     name: Run GoldHunter and commit report
     runs-on: ubuntu-latest
+    # Trigger note: email delivery retest after SMTP secret update.
 
     steps:
       - name: Checkout repository
