@@ -102,7 +102,7 @@ Gold Crash Risk Score =
 
 | 方式 | 说明 |
 | --- | --- |
-| 定时运行 | 每天北京时间 07:30 自动执行 |
+| 定时运行 | 每天北京时间 09:00 自动执行 |
 | 手动运行 | 在 GitHub Actions 页面点击 `Run workflow` |
 | 代码变更 | 修改 `GoldHunter` 或工作流文件后自动执行 |
 

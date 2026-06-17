@@ -3,8 +3,8 @@ name: GoldHunter Daily Report
 on:
   workflow_dispatch:
   schedule:
-    # 07:30 Asia/Shanghai. This runs after the US market session has closed.
-    - cron: "30 23 * * *"
+    # 09:00 Asia/Shanghai. GitHub Actions schedules use UTC, so this is 01:00 UTC.
+    - cron: "0 1 * * *"
   push:
     branches:
       - main
