@@ -10,29 +10,36 @@ EMAIL_SUMMARY = REPORTS_DIR / "email_summary.md"
 HISTORY_LOOKBACK_DAYS = 45
 OIL_SIGNIFICANT_MOVE_PCT = 2.0
 
-MARKET_SYMBOLS = {
+FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
+SPDR_GLD_ARCHIVE_URL = (
+    "https://api.spdrgoldshares.com/api/v1/historical-archive"
+    "?exchange=NYSE&lang=en&product=gld"
+)
+
+OFFICIAL_SERIES = {
     "gold_price": {
-        "name": "黄金价格",
-        "symbols": ["XAUUSD=X", "GC=F", "GLD"],
+        "name": "GLD官方收盘价",
+        "source": "SPDR Gold Shares Historical Archive",
         "unit": "USD",
     },
     "us10y_yield": {
         "name": "美国10年期国债收益率",
-        "symbols": ["^TNX"],
+        "source": "FRED DGS10 / Federal Reserve H.15",
+        "fred_id": "DGS10",
         "unit": "%",
     },
     "dxy": {
-        "name": "美元指数",
-        "symbols": ["DX-Y.NYB", "DX=F", "UUP"],
+        "name": "美联储广义美元指数",
+        "source": "FRED DTWEXBGS / Federal Reserve H.10",
+        "fred_id": "DTWEXBGS",
         "unit": "",
     },
     "oil_price": {
-        "name": "原油价格",
-        "symbols": ["CL=F", "BZ=F"],
+        "name": "WTI原油现货价格",
+        "source": "FRED DCOILWTICO / U.S. EIA",
+        "fred_id": "DCOILWTICO",
         "unit": "USD",
     },
 }
-
-ETF_SYMBOL = "GLD"
 
 REPORT_TITLE = "黄金宏观监控日报"

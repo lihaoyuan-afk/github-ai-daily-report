@@ -37,9 +37,12 @@ def generate_report(
         "",
         "## 指标备注",
         "",
-        "- 黄金价格优先使用 XAU/USD，失败后回退到 COMEX 黄金期货或 GLD。",
-        "- 美国10年期国债收益率使用 Yahoo Finance 的 ^TNX；如返回数值为收益率乘以10，程序会自动换算为百分比。",
-        "- 黄金ETF资金流向使用 GLD 的价格与成交量生成代理值：上涨日为正、下跌日为负。它不是官方持仓变化，但可作为公开数据下的资金方向参考。",
+        "- 黄金价格口径改为 SPDR Gold Shares 官方历史档案中的 GLD 收盘价；XAU/USD、LBMA、ICE、CME 的实时官方接口通常需要授权或许可。",
+        "- 美国10年期国债收益率使用 FRED DGS10，来源为 Federal Reserve H.15 Selected Interest Rates。",
+        "- 美元指标使用 FRED DTWEXBGS，即美联储 H.10 的 Nominal Broad U.S. Dollar Index；它不是 ICE DXY，但属于官方美元强弱指标。",
+        "- 黄金ETF资金流向使用 SPDR Gold Shares 官方历史档案中的 Tonnes of Gold 日变化，正值视为净流入，负值视为净流出。",
+        "- 原油价格使用 FRED DCOILWTICO，来源为 U.S. Energy Information Administration 的 WTI Cushing 现货价。",
+        "- 各官方源发布时间不同，报告使用每个指标的最新可得数据，并在今日数据表中标注数据日。",
         f"- 原油“明显上涨/回落”的阈值为日变化 2%。",
     ]
 
@@ -90,12 +93,12 @@ def _latest_row(history: pd.DataFrame) -> pd.Series | None:
 
 def _today_table(row: pd.Series | None) -> str:
     rows = [
-        ["黄金价格", _fmt(_row_value(row, "gold_price")), _row_value(row, "gold_price_source") or "N/A"],
-        ["美国10年期国债收益率", _fmt(_row_value(row, "us10y_yield"), "%"), _row_value(row, "us10y_yield_source") or "N/A"],
-        ["美元指数", _fmt(_row_value(row, "dxy")), _row_value(row, "dxy_source") or "N/A"],
-        ["黄金ETF GLD收盘价", _fmt(_row_value(row, "gld_close")), _row_value(row, "gold_etf_source") or "N/A"],
-        ["黄金ETF资金流向代理", _fmt_money(_row_value(row, "gold_etf_flow_proxy")), "GLD price x volume proxy"],
-        ["原油价格", _fmt(_row_value(row, "oil_price")), _row_value(row, "oil_price_source") or "N/A"],
+        ["GLD官方收盘价", _fmt(_row_value(row, "gold_price")), _source(row, "gold_price")],
+        ["美国10年期国债收益率", _fmt(_row_value(row, "us10y_yield"), "%"), _source(row, "us10y_yield")],
+        ["美联储广义美元指数", _fmt(_row_value(row, "dxy")), _source(row, "dxy")],
+        ["GLD官方黄金持仓", _fmt(_row_value(row, "gld_tonnes"), " 吨"), _source(row, "gold_etf")],
+        ["GLD持仓日变化", _fmt(_row_value(row, "gold_etf_flow_proxy"), " 吨"), "SPDR Gold Shares Historical Archive"],
+        ["WTI原油现货价格", _fmt(_row_value(row, "oil_price")), _source(row, "oil_price")],
     ]
     return _markdown_table(["指标", "最新值", "数据源/说明"], rows)
 
@@ -103,11 +106,12 @@ def _today_table(row: pd.Series | None) -> str:
 def _change_table(metric_changes: list[MetricChange]) -> str:
     rows = []
     for metric in metric_changes:
+        suffix = " 吨" if metric.key == "gold_etf_flow_proxy" else ""
         rows.append(
             [
                 metric.name,
-                _fmt_change(metric.previous_change, metric.previous_change_pct),
-                _fmt_change(metric.seven_day_change, metric.seven_day_change_pct),
+                _fmt_change(metric.previous_change, metric.previous_change_pct, suffix=suffix),
+                _fmt_change(metric.seven_day_change, metric.seven_day_change_pct, suffix=suffix),
                 metric.signal,
                 f"{metric.score:g}",
                 metric.note,
@@ -140,6 +144,16 @@ def _row_value(row: pd.Series | None, key: str) -> object | None:
     return value
 
 
+def _source(row: pd.Series | None, key: str) -> str:
+    source = _row_value(row, f"{key}_source")
+    source_date = _row_value(row, f"{key}_source_date")
+    if source and source_date:
+        return f"{source}（数据日 {source_date}）"
+    if source:
+        return str(source)
+    return "N/A"
+
+
 def _fmt(value: object | None, suffix: str = "") -> str:
     if value is None:
         return "N/A"
@@ -162,11 +176,11 @@ def _fmt_money(value: object | None) -> str:
     return f"{sign}${abs_number:,.0f}"
 
 
-def _fmt_change(delta: float | None, pct: float | None) -> str:
+def _fmt_change(delta: float | None, pct: float | None, suffix: str = "") -> str:
     if delta is None:
         return "N/A"
     sign = "+" if delta > 0 else ""
     if pct is None:
-        return f"{sign}{delta:,.2f}"
+        return f"{sign}{delta:,.2f}{suffix}"
     pct_sign = "+" if pct > 0 else ""
-    return f"{sign}{delta:,.2f} ({pct_sign}{pct:,.2f}%)"
+    return f"{sign}{delta:,.2f}{suffix} ({pct_sign}{pct:,.2f}%)"

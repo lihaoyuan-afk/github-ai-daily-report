@@ -37,11 +37,11 @@ class AnalysisResult:
 
 
 METRICS = {
-    "gold_price": "黄金价格",
+    "gold_price": "GLD官方收盘价",
     "us10y_yield": "美国10年期国债收益率",
-    "dxy": "美元指数",
-    "gold_etf_flow_proxy": "黄金ETF资金流向代理",
-    "oil_price": "原油价格",
+    "dxy": "美联储广义美元指数",
+    "gold_etf_flow_proxy": "GLD官方持仓变化",
+    "oil_price": "WTI原油现货价格",
 }
 
 
@@ -105,13 +105,13 @@ def _analyze_gold(latest: pd.Series, previous: pd.Series | None, seven_day_ref: 
     delta = _delta(current, previous_value)
 
     if delta is None:
-        score, signal, note = 0, "中性", "黄金价格数据不足。"
+        score, signal, note = 0, "中性", "GLD官方收盘价数据不足。"
     elif delta > 0:
-        score, signal, note = 1, "偏多", "黄金价格上涨，价格趋势对黄金本身有支撑。"
+        score, signal, note = 1, "偏多", "GLD官方收盘价上涨，黄金相关价格动能偏强。"
     elif delta < 0:
-        score, signal, note = -1, "偏空", "黄金价格下跌，短线价格动能偏弱。"
+        score, signal, note = -1, "偏空", "GLD官方收盘价下跌，黄金相关价格动能偏弱。"
     else:
-        score, signal, note = 0, "中性", "黄金价格基本持平。"
+        score, signal, note = 0, "中性", "GLD官方收盘价基本持平。"
 
     return _metric_change("gold_price", current, previous_value, seven_day_ref, score, signal, note)
 
@@ -139,31 +139,45 @@ def _analyze_dxy(latest: pd.Series, previous: pd.Series | None, seven_day_ref: p
     delta = _delta(current, previous_value)
 
     if delta is None:
-        score, signal, note = 0, "中性", "美元指数数据不足。"
+        score, signal, note = 0, "中性", "美联储广义美元指数数据不足。"
     elif delta < 0:
-        score, signal, note = 1, "偏多", "美元指数下降，通常利好以美元计价的黄金。"
+        score, signal, note = 1, "偏多", "美联储广义美元指数下降，通常利好以美元计价的黄金。"
     elif delta > 0:
-        score, signal, note = -1, "偏空", "美元指数上升，通常压制以美元计价的黄金。"
+        score, signal, note = -1, "偏空", "美联储广义美元指数上升，通常压制以美元计价的黄金。"
     else:
-        score, signal, note = 0, "中性", "美元指数基本持平。"
+        score, signal, note = 0, "中性", "美联储广义美元指数基本持平。"
 
     return _metric_change("dxy", current, previous_value, seven_day_ref, score, signal, note)
 
 
 def _analyze_etf_flow(latest: pd.Series, previous: pd.Series | None, seven_day_ref: pd.Series | None) -> MetricChange:
     current = _value(latest, "gold_etf_flow_proxy")
+    seven_day_tonnes_change = _delta(_value(latest, "gld_tonnes"), _value(seven_day_ref, "gld_tonnes"))
 
     if current is None:
-        score, signal, note = 0, "中性", "黄金ETF资金流向代理数据不足。"
+        score, signal, note = 0, "中性", "GLD官方持仓变化数据不足。"
     elif current > 0:
-        score, signal, note = 1, "偏多", "GLD资金流向代理为正，显示ETF端买盘更强。"
+        score, signal, note = 1, "偏多", "GLD官方黄金持仓吨数增加，显示ETF端净流入。"
     elif current < 0:
-        score, signal, note = -1, "偏空", "GLD资金流向代理为负，显示ETF端卖盘更强。"
+        score, signal, note = -1, "偏空", "GLD官方黄金持仓吨数下降，显示ETF端净流出。"
     else:
-        score, signal, note = 0, "中性", "GLD资金流向代理接近中性。"
+        score, signal, note = 0, "中性", "GLD官方黄金持仓吨数未变。"
 
     previous_value = _value(previous, "gold_etf_flow_proxy")
-    return _metric_change("gold_etf_flow_proxy", current, previous_value, seven_day_ref, score, signal, note)
+    return MetricChange(
+        key="gold_etf_flow_proxy",
+        name=METRICS["gold_etf_flow_proxy"],
+        current=current,
+        previous=previous_value,
+        seven_day_ref=_value(seven_day_ref, "gold_etf_flow_proxy"),
+        previous_change=current,
+        previous_change_pct=None,
+        seven_day_change=seven_day_tonnes_change,
+        seven_day_change_pct=None,
+        score=score,
+        signal=signal,
+        note=note,
+    )
 
 
 def _analyze_oil(latest: pd.Series, previous: pd.Series | None, seven_day_ref: pd.Series | None) -> MetricChange:
@@ -172,7 +186,7 @@ def _analyze_oil(latest: pd.Series, previous: pd.Series | None, seven_day_ref: p
     change_pct = _pct_change(current, previous_value)
 
     if change_pct is None:
-        score, signal, note = 0, "中性", "原油价格数据不足。"
+        score, signal, note = 0, "中性", "WTI原油现货价格数据不足。"
     elif change_pct <= -OIL_SIGNIFICANT_MOVE_PCT:
         score, signal, note = 0.5, "偏多", "原油明显回落，通胀压力边际缓和。"
     elif change_pct >= OIL_SIGNIFICANT_MOVE_PCT:
